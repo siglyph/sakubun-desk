@@ -70,6 +70,7 @@ All read from `.env` (see `.env.example`).
 | Variable | Default | What it does |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | none | Enables the AI features |
+| `ANTHROPIC_WORKSPACE_ID` | none | Workspace to bill, needed only when the key is not tied to one workspace |
 | `SAKUBUN_MODEL` | `claude-opus-5-5` | Claude model used for checks and explanations. `claude-sonnet-5-5` and `claude-haiku-5-5` cost less |
 | `SAKUBUN_EFFORT` | `medium` | How much the model thinks: `low`, `medium` or `high` |
 | `SAKUBUN_HOST` | `127.0.0.1` | Address the server listens on |

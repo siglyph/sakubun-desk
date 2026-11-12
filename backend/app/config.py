@@ -13,6 +13,8 @@ HOST = os.getenv("SAKUBUN_HOST", "127.0.0.1")
 PORT = int(os.getenv("SAKUBUN_PORT", "8000"))
 MODEL = os.getenv("SAKUBUN_MODEL", "claude-opus-5-5")
 EFFORT = os.getenv("SAKUBUN_EFFORT", "medium")
+# Only needed for an API key that is not tied to one workspace (the API then asks which to bill).
+WORKSPACE_ID = os.getenv("ANTHROPIC_WORKSPACE_ID", "").strip()
 FRONTEND_DIST = ROOT / "frontend" / "dist"
 
 

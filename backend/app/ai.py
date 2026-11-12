@@ -34,7 +34,8 @@ def _get_client() -> anthropic.Anthropic:
                       "ANTHROPIC_API_KEY to the .env file and restart the server. Readings, the dictionary and "
                       "the grammar reference work without it.", 503)
     if _client is None:
-        _client = anthropic.Anthropic(timeout=180.0, max_retries=1)
+        headers = {"anthropic-workspace-id": config.WORKSPACE_ID} if config.WORKSPACE_ID else None
+        _client = anthropic.Anthropic(timeout=180.0, max_retries=1, default_headers=headers)
     return _client
 
 
@@ -68,6 +69,9 @@ def ask(prompt: str, schema: dict) -> dict:
     except anthropic.RateLimitError:
         raise AIError("rate_limited", "Claude is rate-limiting requests right now. Wait a minute, then try again.", 429)
     except anthropic.BadRequestError as e:
+        if "workspace" in str(e.message).lower():
+            raise AIError("config", "This API key isn’t tied to a workspace, so the API doesn’t know which one to bill. "
+                          "Add ANTHROPIC_WORKSPACE_ID to the .env file, or create a key inside a workspace instead.")
         raise AIError("bad_request", f"Claude rejected the request: {e.message}")
     except anthropic.APIStatusError as e:
         raise AIError("upstream", f"Claude returned an error ({e.status_code}). Try again shortly.")
