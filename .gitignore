@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Built on first run from the JSON in backend/data
+backend/data/dict.sqlite
+backend/data/dict.tmp
+
+# Node
+node_modules/
+frontend/dist/
+
+# Local settings and secrets
+.env
