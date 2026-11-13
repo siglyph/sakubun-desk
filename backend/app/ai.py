@@ -187,7 +187,15 @@ EXPLAIN_SCHEMA = _obj({
 })
 
 
-def explain(sentence: str, context: str = "") -> dict:
+# The same answer plus a verdict on the learner's own attempt at the meaning.
+EXPLAIN_GUESS_SCHEMA = _obj({
+    **EXPLAIN_SCHEMA["properties"],
+    "guess": _obj({"verdict": {"type": "string", "enum": ["right", "close", "off"]}, "feedback": _S}),
+})
+
+
+def explain(sentence: str, context: str = "", guess: str = "") -> dict:
+    """Explain a sentence. With `guess`, also grade the learner's attempt at its meaning."""
     candidates = grammar.detect(sentence)
     flagged = "\n".join(f"{g['id']} | {g['pattern']} | {g['meaning']}" for g in candidates)
     prompt = f"""Explain one Japanese sentence to a learner. {LEARNER}
@@ -201,15 +209,26 @@ Sentence: {sentence}
 - "parts": phrase-sized chunks copied exactly from the sentence, in order, together covering the whole sentence. For each: "role" is its job in a few words (topic, time, object, place of action, verb (polite past), clause describing 人, …) and "en" is what the chunk means.
 - "grammar": every grammar point above beginner particles that a learner at this level would want explained, whether or not it was flagged. For each: "id" is the id from the flagged list if that entry really is used here, otherwise an empty string; "pattern" is the pattern in dictionary style (e.g. 〜ようにする); "where" is the exact substring of the sentence where it appears; "note" is one or two sentences on what it does in THIS sentence. Leave out flagged entries that are not actually used.
 - "notes": anything else worth knowing (dropped subject, nuance, register), or an empty string."""
-    r = ask(prompt, EXPLAIN_SCHEMA)
+    if guess:
+        prompt += f"""
+
+Before seeing any of this, the learner wrote what they think the sentence means:
+"{guess}"
+
+- "guess": grade that attempt against the sentence's actual meaning. Judge the meaning, not the English wording or style, and do not penalise a loose but accurate paraphrase. "verdict" is "right" if nothing important is missing or wrong, "close" if the gist is there but a detail is missed or misread, "off" if the main point is wrong. "feedback" is two or three sentences addressed to the learner: what they got right, then exactly which word or grammar point in the Japanese they missed or misread and what it actually means. Be honest and brief."""
+    r = ask(prompt, EXPLAIN_GUESS_SCHEMA if guess else EXPLAIN_SCHEMA)
     points = []
     for x in r.get("grammar", []):
         g = grammar.BY_ID.get(x.get("id", "")) or grammar.find(x.get("pattern", ""))
         if x.get("pattern") or g:
             points.append({"entry": grammar.brief(g) if g else None, "pattern": x.get("pattern", "").strip(),
                            "where": x.get("where", "").strip(), "note": x.get("note", "").strip()})
+    graded = None
+    if guess and isinstance(r.get("guess"), dict):
+        graded = {"text": guess, "verdict": r["guess"].get("verdict", ""), "feedback": r["guess"].get("feedback", "").strip()}
     return {"translation": r.get("translation", "").strip(), "literal": r.get("literal", "").strip(),
-            "parts": [p for p in r.get("parts", []) if p.get("text")], "grammar": points, "notes": r.get("notes", "").strip()}
+            "parts": [p for p in r.get("parts", []) if p.get("text")], "grammar": points,
+            "notes": r.get("notes", "").strip(), "guess": graded}
 
 
 GRAMMAR_ASK_SCHEMA = _obj({"answer": _S, "picks": {"type": "array", "items": _obj({"id": _S, "why": _S})}})

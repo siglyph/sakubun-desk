@@ -47,19 +47,23 @@ export function SettingsPanel() {
     </label>
   );
   return (
-    <section className="settings" aria-label="Furigana and display settings">
-      <div className="wrap">
-        {select('furi', 'Show furigana', [['always', 'Always'], ['hover', 'Only when I point at or tap a word'], ['off', 'Never']])}
-        {select('skip', 'For which kanji', [[0, 'Every kanji'], [4, 'Skip JLPT N5 kanji'], [3, 'Skip N5–N4 kanji'], [2, 'Skip N5–N2 kanji (N1 and rarer only)']], true)}
-        <label className="field"><span>Kanji I already know</span>
-          <input type="text" lang="ja" placeholder="例: 日本語学生先生" autoComplete="off" spellCheck={false} value={settings.known}
-            onChange={e => update('known', [...new Set([...e.target.value].filter(c => KANJI_RE.test(c)))].join(''))} />
-          <small>Words written only with these get no furigana.</small>
-        </label>
-        {select('script', 'Write readings in', [['hira', 'Hiragana'], ['kata', 'Katakana'], ['romaji', 'Rōmaji']])}
-        {select('font', 'Japanese typeface', [['gothic', 'Gothic (screen style)'], ['mincho', 'Minchō (print style)'], ['kyokasho', 'Kyōkasho (textbook, close to handwriting)']])}
-        {select('size', 'Japanese text size', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']])}
+    <div className="settings">
+      {select('furi', 'Show furigana', [['always', 'Always'], ['hover', 'Only when I point at or tap a word'], ['off', 'Never']])}
+      {select('skip', 'For which kanji', [[0, 'Every kanji'], [4, 'Skip JLPT N5 kanji'], [3, 'Skip N5–N4 kanji'], [2, 'Skip N5–N2 kanji (N1 and rarer only)']], true)}
+      <label className="field"><span>Kanji I already know</span>
+        <input type="text" lang="ja" placeholder="例: 日本語学生先生" autoComplete="off" spellCheck={false} value={settings.known}
+          onChange={e => update('known', [...new Set([...e.target.value].filter(c => KANJI_RE.test(c)))].join(''))} />
+        <small>Words written only with these get no furigana.</small>
+      </label>
+      {select('script', 'Write readings in', [['hira', 'Hiragana'], ['kata', 'Katakana'], ['romaji', 'Rōmaji']])}
+      {select('font', 'Japanese typeface', [['gothic', 'Gothic (screen style)'], ['mincho', 'Minchō (print style)'], ['kyokasho', 'Kyōkasho (textbook, close to handwriting)']])}
+      {select('size', 'Japanese text size', [['s', 'Small'], ['m', 'Medium'], ['l', 'Large']])}
+      <div className="about">
+        <div className="label">About and data sources</div>
+        <div>Dictionary data: <a href="https://www.edrdg.org/jmdict/j_jmdict.html">JMdict</a> and <a href="https://www.edrdg.org/wiki/index.php/KANJIDIC_Project">KANJIDIC2</a>, © Electronic Dictionary Research and Development Group, used under CC BY-SA 4.0. Readings by Janome with the IPA dictionary.</div>
+        <div>Grammar notes follow the lesson order of Genki I, Genki II and Tobira; the explanations and examples are written for this app.</div>
+        <div>Checks, translations and sentence explanations are written by Claude and can be wrong.</div>
       </div>
-    </section>
+    </div>
   );
 }

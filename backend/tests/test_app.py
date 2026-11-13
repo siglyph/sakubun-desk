@@ -90,3 +90,22 @@ def test_check_shapes_claude_answer(client, monkeypatch):
     r = client.post("/api/ai/check", json={"text": "映画を見ました。映画はとても面白いでした。"}).json()
     issue = r["issues"][0]
     assert issue["sentText"] == "映画はとても面白いでした。" and issue["grammar"]["source"] == "Genki I"
+
+
+def test_explain_grades_a_guess(client, monkeypatch):
+    seen = {}
+
+    def fake(prompt, schema):
+        seen["prompt"], seen["schema"] = prompt, schema
+        answer = {"translation": "I make a point of writing a diary every day.", "literal": "", "parts": [], "grammar": [], "notes": ""}
+        if "guess" in schema["properties"]:
+            answer["guess"] = {"verdict": "close", "feedback": "You missed ようにしています."}
+        return answer
+    monkeypatch.setattr(ai, "ask", fake)
+    body = {"sentence": "毎日日記を書くようにしています。", "guess": "I write a diary every day."}
+    r = client.post("/api/ai/explain", json=body).json()
+    assert "I write a diary every day." in seen["prompt"] and "guess" in seen["schema"]["required"]
+    assert r["guess"] == {"text": "I write a diary every day.", "verdict": "close", "feedback": "You missed ようにしています."}
+    # without a guess nothing is graded and the plain schema is used
+    r = client.post("/api/ai/explain", json={"sentence": body["sentence"]}).json()
+    assert r["guess"] is None and "guess" not in seen["schema"]["properties"]

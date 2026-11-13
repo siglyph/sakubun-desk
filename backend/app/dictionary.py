@@ -252,10 +252,8 @@ def search(q: str, direction: str = "auto", cls: str = "", base: str = "") -> di
                 if found:
                     groups.append({"title": "Word by word", "entries": found})
         if from_text and any_exact:
-            ex = exact_entries(q, cls)
-            have = {e["id"] for e in ex}
-            rest = _entries_by_id([eid for _, eid, _ in res if eid not in have])
-            groups.append({"title": "", "entries": (ex + rest)[:40]})
+            # A word tapped in a text: show that word only, not everything that happens to contain it.
+            groups.append({"title": "", "entries": exact_entries(q, cls)})
         elif res:
             groups.append({"title": f"Entries containing {q}" if groups else "", "entries": _entries_by_id([r[1] for r in res])})
     else:

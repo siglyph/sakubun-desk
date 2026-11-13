@@ -39,6 +39,7 @@ class WritingIn(BaseModel):
 class ExplainIn(BaseModel):
     sentence: str = Field(min_length=1, max_length=1000)
     context: str = Field(default="", max_length=6000)
+    guess: str = Field(default="", max_length=1000)      # the learner's own attempt at the meaning
 
 
 class QuestionIn(BaseModel):
@@ -115,7 +116,7 @@ def ai_meaning(body: WritingIn):
 
 @app.post("/api/ai/explain")
 def ai_explain(body: ExplainIn):
-    return ai.explain(body.sentence.strip(), body.context)
+    return ai.explain(body.sentence.strip(), body.context, body.guess.strip())
 
 
 @app.post("/api/ai/grammar")

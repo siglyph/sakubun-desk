@@ -2,10 +2,9 @@
 
 A self-hosted web app for practicing Japanese writing and taking apart sentences from Japanese sources. React frontend, Python (FastAPI) backend.
 
-- **Write (書く)**: type Japanese, see it with furigana, and ask for a check only when you're done. Problems are underlined with an explanation and a hint; the corrected version stays hidden until you ask for it. "What does this say?" translates what you actually wrote. No autocomplete and no suggestions while typing.
-- **Read (読む)**: paste Japanese text to get a per-sentence breakdown: words coloured by part of speech, tap a word for its dictionary form, conjugation chain, definitions and kanji, plus the grammar patterns spotted in the sentence. English is hidden behind a toggle.
-- **Dictionary (辞書)**: about 191,000 JMdict entries, searchable by Japanese, kana, rōmaji or English. Conjugated forms resolve to the dictionary form.
-- **Grammar (文法)**: 470 entries following the lesson order of Genki I, Genki II and Tobira, searchable by pattern, rōmaji or English idea ("or", "have to", "even if").
+- **Write (書く)**: one text box. Type Japanese, then "Read back" to see the same box with furigana, or "Check" when you're done. Problems are underlined with an explanation and a hint; the corrected version stays hidden until you ask for it. "What does this say?" translates what you actually wrote. No autocomplete and no suggestions while typing.
+- **Read (読む)**: paste Japanese text to get a per-sentence breakdown: words coloured by part of speech, plus the grammar patterns spotted in each sentence. English can be hidden, shown, or held back until you've had a go: in "Guess first" mode you write what you think a sentence means, and Claude tells you what you got right and what you misread before showing the translation.
+- **Look up (辞書 / 文法)**: tap any word, or press "Look up", and a drawer slides in with the dictionary (about 191,000 JMdict entries, searchable by Japanese, kana, rōmaji or English) and the grammar reference (470 entries following Genki I, Genki II and Tobira, searchable by pattern, rōmaji or English idea such as "or", "have to", "even if"). Furigana and display settings are in the same drawer.
 
 Furigana, the dictionary, the grammar reference and the word-by-word breakdown run entirely on your machine. The writing check, translation and sentence explanations call the Claude API and need an Anthropic API key.
 
@@ -76,7 +75,7 @@ All read from `.env` (see `.env.example`).
 | `SAKUBUN_HOST` | `127.0.0.1` | Address the server listens on |
 | `SAKUBUN_PORT` | `8000` | Port |
 
-AI requests only happen when you press a button (check, "what does this say", explain, "ask Claude which structure…"). Each one is a single API call of a few thousand tokens at most.
+AI requests only happen when you press a button (check, "what does this say", explain or check a guess, "ask Claude which structure…"). Each one is a single API call of a few thousand tokens at most.
 
 ## Development
 
@@ -106,7 +105,8 @@ cd backend && pip install -r requirements-dev.txt && pytest
 | `backend/app/grammar.py` | Grammar search, lookup and pattern spotting |
 | `backend/app/ai.py` | Prompts and Claude API calls |
 | `backend/data/` | JMdict (four JSON files), KANJIDIC2 subset, grammar reference |
-| `frontend/src/views/` | Write, Read, Dictionary and Grammar screens |
+| `frontend/src/App.jsx` | Page shell: the two views and the look-up drawer |
+| `frontend/src/views/` | Write and Read views; Dictionary and Grammar panes shown in the drawer |
 | `frontend/src/components/Japanese.jsx` | Furigana rendering and shared pieces |
 | `frontend/src/settings.jsx` | Furigana and display preferences |
 

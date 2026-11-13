@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, store } from '../api.js';
-import { useDebounced } from '../hooks.js';
 import { Busy, Hanamaru, JpLine, Word } from '../components/Japanese.jsx';
 
-const EXAMPLE = '週末、友達と映画を見に行きました。映画はとても面白いでした。来週も映画館で行きたいと思います。';
 const SEVERITY = { error: 'Wrong', unnatural: 'Unnatural', note: 'Polish' };
 
 /** Where an issue's quoted text sits in the current draft, or null once it has been edited away. */
@@ -46,10 +44,11 @@ function IssueCard({ issue, gone, onHover, onOpenGrammar }) {
 }
 
 export default function WriteView({ onLookup, onOpenGrammar, aiEnabled }) {
-  const [text, setText] = useState(() => store.get('write', null) ?? EXAMPLE);
+  const [text, setText] = useState(() => store.get('write', ''));
   const [intent, setIntent] = useState(() => store.get('intent', ''));
-  const [intentOpen] = useState(() => !!store.get('intent', ''));   // open on load only if something was saved
-  const [items, setItems] = useState(null);
+  // One box, two states: 'edit' is the textarea; 'read' shows the same text with readings and underlines.
+  const [mode, setMode] = useState('edit');
+  const [items, setItems] = useState(null);          // analysis of `text`, fetched when entering read-back
   const [check, setCheck] = useState(null);          // { status: 'loading' | 'done' | 'error', … }
   const [meaning, setMeaning] = useState(null);
   const [selected, setSelected] = useState(null);
@@ -57,35 +56,51 @@ export default function WriteView({ onLookup, onOpenGrammar, aiEnabled }) {
   const ctl = useRef({});
   const input = useRef(null);
 
-  // Readings for the preview: re-analyzed shortly after typing stops.
-  const settled = useDebounced(text, 250);
-  useEffect(() => {
-    store.set('write', settled);
-    if (!settled.trim()) { setItems([]); return; }
-    const c = new AbortController();
-    api.post('/api/analyze', { text: settled }, c.signal).then(r => setItems(r.items)).catch(() => {});
-    return () => c.abort();
-  }, [settled]);
+  useEffect(() => { store.set('write', text); }, [text]);
   useEffect(() => { store.set('intent', intent); }, [intent]);
+  // The textarea grows with what is written instead of scrolling inside itself.
+  useLayoutEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 2 + 'px';
+  }, [text, mode]);
 
   const issues = check?.status === 'done' ? check.issues : [];
-  const ranges = useMemo(() => issues.map(i => ({ issue: i, range: locate(i, settled) })), [issues, settled]);
+  const ranges = useMemo(() => issues.map(i => ({ issue: i, range: locate(i, text) })), [issues, text]);
+
+  async function readBack() {
+    if (!text.trim()) { input.current?.focus(); return; }
+    try {
+      setItems((await api.post('/api/analyze', { text })).items);
+      setSelected(null);
+      setMode('read');
+    } catch { /* stay in the editor; the offline note in the header explains */ }
+  }
+  function edit() {
+    setMode('edit');
+    requestAnimationFrame(() => { const el = input.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
+  }
 
   async function run(kind, setState) {
-    if (!text.trim()) { input.current?.focus(); return; }
+    if (!text.trim()) { input.current?.focus(); return null; }
     ctl.current[kind]?.abort();
     const c = (ctl.current[kind] = new AbortController());
     setState({ status: 'loading' });
     try {
       const r = await api.post('/api/ai/' + kind, { text, intent: intent.trim() }, c.signal);
       setState({ status: 'done', ...r });
+      return r;
     } catch (e) {
       setState(e.code === 'cancelled' ? null : { status: 'error', message: e.message });
+      return null;
     }
   }
-  const runCheck = () => run('check', setCheck);
+  async function runCheck() {
+    const r = await run('check', setCheck);
+    if (r?.issues.length) readBack();                // flip to read-back so the underlines are visible
+  }
   const runMeaning = () => run('meaning', setMeaning);
-  const clear = () => { setText(''); setCheck(null); setMeaning(null); input.current?.focus(); };
 
   const count = [...text.replace(/\s/g, '')].length;
   const pick = (item, issue) => {
@@ -96,39 +111,35 @@ export default function WriteView({ onLookup, onOpenGrammar, aiEnabled }) {
 
   return (
     <section className="view" aria-label="Write">
-      <div className="view-head"><h1><span lang="ja">書く</span><small>Write</small></h1><p>Write first. Nothing is checked or suggested until you ask.</p></div>
-      {text === EXAMPLE && (
-        <div className="example-note"><span>This is an example with a couple of mistakes in it, so you can try the checker. Replace it with your own writing.</span>
-          <button className="link" onClick={clear}>Clear it</button></div>
+      {mode === 'edit' ? (
+        <textarea className="sheet" ref={input} lang="ja" placeholder="ここに日本語で書いてください。" aria-label="Your Japanese text"
+          autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runCheck(); } }} />
+      ) : (
+        // Clicking the empty part of the sheet goes back to typing; clicking a word looks it up.
+        <div className="sheet readback" lang="ja" aria-label="Your text with readings" onClick={e => { if (e.target === e.currentTarget) edit(); }}>
+          {items.map((it, i) => {
+            if (it.t === 'n') return <br key={i} />;
+            if (it.t === 'p') return <span key={i}>{it.s}</span>;
+            const hit = ranges.find(r => r.range && r.range[0] < it.end && r.range[1] > it.start);
+            return <Word key={i} item={it} onPick={pick} selected={selected === it.start} issue={hit && { ...hit.issue, flash: hovered === hit.issue.n }} />;
+          })}
+        </div>
       )}
-      <textarea className="sheet" ref={input} lang="ja" placeholder="ここに日本語で書いてください。" aria-label="Your Japanese text"
-        autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={text}
-        onChange={e => setText(e.target.value)}
-        onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); runCheck(); } }} />
-      <details className="intent" open={intentOpen || undefined}>
-        <summary>Say what you meant in English (optional). The checker will compare.</summary>
-        <textarea className="small" placeholder="e.g. I went to see a movie with a friend on the weekend." aria-label="What you meant to say, in English"
-          value={intent} onChange={e => setIntent(e.target.value)} />
-      </details>
+
+      <input className="intent" type="text" placeholder="What you meant, in English (optional; the checker compares)" aria-label="What you meant to say, in English"
+        autoComplete="off" value={intent} onChange={e => setIntent(e.target.value)} />
+
       <div className="row">
         <span className="muted tiny">{count ? `${count} character${count === 1 ? '' : 's'}` : ''}</span><span className="grow" />
-        <button className="btn" onClick={runMeaning} title="See how your Japanese reads in English">What does this say?</button>
-        <button className="btn primary" onClick={runCheck} title="Ctrl/⌘ + Enter">Check my writing</button>
+        {mode === 'edit'
+          ? <button className="btn" onClick={readBack} disabled={!text.trim()} title="Show your text with furigana">Read back</button>
+          : <button className="btn" onClick={edit}>Edit</button>}
+        <button className="btn" onClick={runMeaning} disabled={!text.trim()} title="See how your Japanese reads in English">What does this say?</button>
+        <button className="btn primary" onClick={runCheck} disabled={!text.trim()} title="Ctrl/⌘ + Enter">Check</button>
       </div>
-      {!aiEnabled && <div className="muted tiny">Checks and translations need an Anthropic API key on the server (see the README). Readings, the dictionary and the grammar reference work without one.</div>}
-
-      <div className="paper-label"><span className="label">As written, with readings</span></div>
-      <div className="paper" lang="ja">
-        {!text.trim() ? <span className="muted" style={{ fontSize: '.95rem', fontFamily: 'var(--font-ui)' }}>Your text appears here with readings, so you can catch a wrong kanji conversion.</span>
-          : !items ? text
-            : items.map((it, i) => {
-              if (it.t === 'n') return <br key={i} />;
-              if (it.t === 'p') return <span key={i}>{it.s}</span>;
-              const hit = ranges.find(r => r.range && r.range[0] < it.end && r.range[1] > it.start);
-              return <Word key={i} item={it} onPick={pick} selected={selected === it.start}
-                issue={hit && { ...hit.issue, flash: hovered === hit.issue.n }} />;
-            })}
-      </div>
+      {!aiEnabled && <div className="muted tiny">Checks and translations need an Anthropic API key on the server (see the README). Furigana, the dictionary and the grammar reference work without one.</div>}
 
       {check?.status === 'loading' && <div className="panel"><Busy label="Reading your text…" onStop={() => ctl.current.check?.abort()} /></div>}
       {check?.status === 'error' && <div className="panel"><div>{check.message}</div></div>}
@@ -141,7 +152,6 @@ export default function WriteView({ onLookup, onOpenGrammar, aiEnabled }) {
               <div>
                 <h2>{issues.length} thing{issues.length === 1 ? '' : 's'} to look at</h2>
                 {check.overall && <div className="muted">{check.overall}</div>}
-                <div className="muted tiny">Each one is underlined above. Try fixing it from the hint before you open the answer.</div>
               </div>
               {ranges.map(({ issue, range }) => <IssueCard key={issue.n} issue={issue} gone={!range} onHover={setHovered} onOpenGrammar={onOpenGrammar} />)}
             </>

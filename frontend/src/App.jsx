@@ -6,96 +6,77 @@ import ReadView from './views/ReadView.jsx';
 import DictionaryPane from './views/DictionaryPane.jsx';
 import GrammarPane from './views/GrammarPane.jsx';
 
-const MAIN = [['write', '書く', 'Write'], ['read', '読む', 'Read']];
-const REF = [['dict', '辞書', 'Dictionary'], ['grammar', '文法', 'Grammar']];
-const narrow = () => window.matchMedia('(max-width: 980px)').matches;
+const VIEWS = [['write', '書く', 'Write'], ['read', '読む', 'Read']];
+const DRAWER_TABS = [['dict', '辞書', 'Dictionary'], ['grammar', '文法', 'Grammar'], ['display', '表示', 'Display']];
 
-function fromHash() {
-  const name = window.location.hash.slice(1);
-  if (name === 'write' || name === 'read') return { main: name, focus: 'main' };
-  if (name === 'dictionary' || name === 'grammar') return { ref: name === 'grammar' ? 'grammar' : 'dict', focus: 'ref' };
-  return {};
-}
+const viewFromHash = () => (window.location.hash === '#read' ? 'read' : window.location.hash === '#write' ? 'write' : null);
 
 export default function App() {
-  // `main` is the workspace on the left, `ref` the reference pane on the right. On a phone only one
-  // of the two columns shows at a time: `focus` says which, `returning` shows the "back to your text" link.
-  const [nav, setNav] = useState(() => ({ main: store.get('main', 'write'), ref: store.get('ref', 'dict'), focus: 'main', returning: false, ...fromHash() }));
-  const [showSettings, setShowSettings] = useState(false);
+  const [view, setView] = useState(() => viewFromHash() || store.get('main', 'write'));
+  const [drawer, setDrawer] = useState(null);        // null (closed) | 'dict' | 'grammar' | 'display'
+  const [drawerTab, setDrawerTab] = useState('dict'); // the last tab shown, kept so the drawer can animate shut
   const [lookup, setLookup] = useState(null);        // { word } tapped in a text
   const [grammarOpen, setGrammarOpen] = useState(null);
   const [status, setStatus] = useState(null);
 
   useEffect(() => { api.get('/api/status').then(setStatus).catch(() => setStatus({ offline: true })); }, []);
   useEffect(() => {
-    const onHash = () => setNav(n => ({ ...n, ...fromHash() }));
+    const onHash = () => { const v = viewFromHash(); if (v) setView(v); };
     window.addEventListener('hashchange', onHash);
     return () => window.removeEventListener('hashchange', onHash);
   }, []);
   useEffect(() => {
-    document.body.dataset.focus = nav.focus;
-    if (nav.returning) document.body.dataset.return = '1'; else delete document.body.dataset.return;
-    store.set('main', nav.main); store.set('ref', nav.ref);
-    const name = nav.focus === 'ref' && narrow() ? (nav.ref === 'dict' ? 'dictionary' : 'grammar') : nav.main;
-    window.history.replaceState(null, '', '#' + name);
-  }, [nav]);
+    store.set('main', view);
+    window.history.replaceState(null, '', '#' + view);
+  }, [view]);
+  useEffect(() => {
+    if (!drawer) return;
+    const onKey = e => { if (e.key === 'Escape') setDrawer(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [drawer]);
 
-  const showMain = main => setNav(n => ({ ...n, main, focus: 'main', returning: false }));
-  const showRef = (ref, fromText = false) => {
-    setNav(n => ({ ...n, ref, focus: 'ref', returning: fromText }));
-    if (narrow()) window.scrollTo(0, 0);
-  };
-  const lookupWord = useCallback(word => { setLookup({ word }); showRef('dict', true); }, []);
-  const openGrammar = useCallback(id => { setGrammarOpen({ id }); showRef('grammar', true); }, []);
+  const openDrawer = useCallback(tab => { setDrawerTab(tab); setDrawer(tab); }, []);
+  const lookupWord = useCallback(word => { setLookup({ word }); openDrawer('dict'); }, [openDrawer]);
+  const openGrammar = useCallback(id => { setGrammarOpen({ id }); openDrawer('grammar'); }, [openDrawer]);
   const aiEnabled = status ? !!status.ai?.enabled : true;
 
   return (
     <SettingsProvider>
-      <header className="top">
-        <div className="wrap">
-          <div className="brand"><span className="mark" lang="ja">作文</span><span className="name">Sakubun Desk</span></div>
-          <nav className="tabs" aria-label="Workspace">
-            {MAIN.map(([id, ja, en]) => (
-              <button key={id} className="tab" aria-selected={nav.main === id} onClick={() => showMain(id)}><span className="ja" lang="ja">{ja}</span>{en}</button>
-            ))}
-          </nav>
-          <span className="grow" />
-          <button className="ghost" aria-expanded={showSettings} onClick={() => setShowSettings(v => !v)}><span lang="ja">ふりがな</span> &amp; display</button>
-        </div>
-      </header>
-      {showSettings && <SettingsPanel />}
-      {status?.offline && <div className="wrap" style={{ paddingTop: 12 }}><div className="example-note">Can’t reach the Sakubun Desk server. Start the backend, then reload this page.</div></div>}
-
-      <div className="wrap layout">
-        <main>
-          {/* Both views stay mounted so a draft, its check results and scroll position survive switching tabs. */}
-          <div hidden={nav.main !== 'write'}><WriteView onLookup={lookupWord} onOpenGrammar={openGrammar} aiEnabled={aiEnabled} /></div>
-          <div hidden={nav.main !== 'read'}><ReadView onLookup={lookupWord} onOpenGrammar={openGrammar} aiEnabled={aiEnabled} /></div>
-        </main>
-        <aside className="ref" aria-label="Reference">
-          <div className="reftabs">
-            {REF.map(([id, ja, en]) => (
-              <button key={id} className="reftab" aria-selected={nav.ref === id} onClick={() => showRef(id)}><span className="ja" lang="ja">{ja}</span>{en}</button>
-            ))}
+      <div className={'shell' + (drawer ? ' with-drawer' : '')}>
+        <header className="top">
+          <div className="bar">
+            <span className="brand" lang="ja" title="Sakubun Desk">作文</span>
+            <nav className="tabs" aria-label="Workspace">
+              {VIEWS.map(([id, ja, en]) => (
+                <button key={id} className="tab" aria-selected={view === id} onClick={() => setView(id)}><span className="ja" lang="ja">{ja}</span>{en}</button>
+              ))}
+            </nav>
+            <span className="grow" />
+            <button className="btn" aria-expanded={!!drawer} onClick={() => (drawer ? setDrawer(null) : openDrawer(drawerTab))}><span lang="ja">辞書</span> Look up</button>
           </div>
-          <div className="backbar"><button className="link" onClick={() => showMain(nav.main)}>← Back to your text</button></div>
-          <div hidden={nav.ref !== 'dict'} style={{ display: nav.ref === 'dict' ? 'contents' : undefined }}><DictionaryPane lookup={lookup} onOpenGrammar={openGrammar} /></div>
-          <div hidden={nav.ref !== 'grammar'} style={{ display: nav.ref === 'grammar' ? 'contents' : undefined }}><GrammarPane openRequest={grammarOpen} /></div>
-        </aside>
+        </header>
+
+        <main className="page">
+          {status?.offline && <p className="muted" style={{ marginBottom: 14 }}>Can’t reach the Sakubun Desk server. Start the backend, then reload this page.</p>}
+          {/* Both views stay mounted so a draft and its results survive switching tabs. */}
+          <div hidden={view !== 'write'}><WriteView onLookup={lookupWord} onOpenGrammar={openGrammar} aiEnabled={aiEnabled} /></div>
+          <div hidden={view !== 'read'}><ReadView onLookup={lookupWord} onOpenGrammar={openGrammar} aiEnabled={aiEnabled} /></div>
+        </main>
       </div>
 
-      <footer className="foot"><div className="wrap">
-        Dictionary data: <a href="https://www.edrdg.org/jmdict/j_jmdict.html">JMdict</a> and <a href="https://www.edrdg.org/wiki/index.php/KANJIDIC_Project">KANJIDIC2</a>, © Electronic Dictionary Research and Development Group, used under CC BY-SA 4.0. Readings by Janome with the IPA dictionary. Grammar notes follow the lesson order of Genki I, Genki II and Tobira; the explanations and examples are written for this app. Checks, translations and sentence explanations are written by Claude and can be wrong.
-      </div></footer>
-
-      <nav className="bottomnav" aria-label="Sections">
-        {MAIN.map(([id, ja, en]) => (
-          <button key={id} aria-selected={nav.focus === 'main' && nav.main === id} onClick={() => showMain(id)}><span className="ja" lang="ja">{ja}</span><span className="lbl">{en}</span></button>
-        ))}
-        {REF.map(([id, ja, en]) => (
-          <button key={id} aria-selected={nav.focus === 'ref' && nav.ref === id} onClick={() => showRef(id)}><span className="ja" lang="ja">{ja}</span><span className="lbl">{en}</span></button>
-        ))}
-      </nav>
+      {drawer && <div className="scrim" onClick={() => setDrawer(null)} />}
+      <aside className={'drawer' + (drawer ? ' open' : '')} aria-label="Reference" aria-hidden={!drawer}>
+        <div className="drawer-head">
+          {DRAWER_TABS.map(([id, ja, en]) => (
+            <button key={id} className="reftab" aria-selected={drawerTab === id} onClick={() => openDrawer(id)}><span className="ja" lang="ja">{ja}</span>{en}</button>
+          ))}
+          <button className="drawer-close" aria-label="Close" onClick={() => setDrawer(null)}>✕</button>
+        </div>
+        <div className="pane" hidden={drawerTab !== 'dict'}><DictionaryPane lookup={lookup} onOpenGrammar={openGrammar} /></div>
+        <div className="pane" hidden={drawerTab !== 'grammar'}><GrammarPane openRequest={grammarOpen} /></div>
+        <div className="pane" hidden={drawerTab !== 'display'}><SettingsPanel /></div>
+      </aside>
     </SettingsProvider>
   );
 }

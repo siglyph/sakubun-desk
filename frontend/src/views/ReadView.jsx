@@ -1,26 +1,53 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, store } from '../api.js';
 import { Busy, GrammarChip, Word } from '../components/Japanese.jsx';
 
-const EXAMPLE = '日本に来てから、毎日日本語で日記を書くようにしています。最初は簡単な文しか書けませんでしたが、少しずつ長い文章が書けるようになってきました。';
+// How English is revealed: never until asked, only after you have written your own guess, or straight away.
+const ENGLISH_MODES = [['hidden', 'Hidden'], ['guess', 'Guess first'], ['shown', 'Shown']];
+const VERDICT = { right: 'Right', close: 'Close', off: 'Off' };
 
-function Sentence({ sentence, ai, showAllEnglish, selected, onPick, onExplain, onStop, onOpenGrammar }) {
-  const [showEnglish, setShowEnglish] = useState(false);
+function Sentence({ sentence, ai, englishMode, selected, onPick, onExplain, onStop, onOpenGrammar }) {
+  const [showEnglish, setShowEnglish] = useState(false);   // the per-sentence toggle used in "Hidden" mode
+  const [guess, setGuess] = useState('');
+  const data = ai?.status === 'done' ? ai.data : null;
+  const loading = ai?.status === 'loading';
+  const english = englishMode === 'shown' || (englishMode === 'guess' && !!data) || showEnglish;
+  const guessing = englishMode === 'guess' && !data;       // waiting for the reader's own attempt
+
   const toggleEnglish = () => {
     if (!showEnglish && !ai) onExplain();
     setShowEnglish(v => !v);
   };
-  const data = ai?.status === 'done' ? ai.data : null;
+  const submitGuess = e => { e.preventDefault(); if (guess.trim() && !loading) onExplain(guess.trim()); };
+
   return (
-    <div className={'sent' + (showEnglish ? ' show-en' : '')}>
+    <div className={'sent' + (english ? ' show-en' : '')}>
       <div className="jp-line" lang="ja">
         {sentence.items.map((it, i) => it.t === 'w'
           ? <Word key={i} item={it} onPick={item => onPick(item, i)} selected={selected === i} />
           : <span key={i}>{it.s}</span>)}
       </div>
 
+      {guessing && !loading && (
+        <form className="guessrow" onSubmit={submitGuess}>
+          <input className="intent" type="text" placeholder="What do you think this means?" aria-label="Your guess at the English meaning"
+            autoComplete="off" value={guess} onChange={e => setGuess(e.target.value)} />
+          <button className="btn primary" type="submit" disabled={!guess.trim()}>Check my guess</button>
+          <button className="link" type="button" onClick={() => onExplain()}>Skip, just show me</button>
+        </form>
+      )}
+      {loading && <Busy label={guessing && guess.trim() ? 'Checking your guess…' : 'Explaining…'} onStop={onStop} />}
+      {ai?.status === 'error' && <div className="row"><span className="muted">{ai.message}</span><button className="link" onClick={() => onExplain(guessing ? guess.trim() : '')}>Try again</button></div>}
+
       {data ? (
         <>
+          {data.guess && (
+            <div className="graded">
+              <div className="row"><span className={'pill ' + data.guess.verdict}>{VERDICT[data.guess.verdict] || 'Checked'}</span><span className="muted tiny">Your guess</span></div>
+              <div className="yours">{data.guess.text}</div>
+              <div>{data.guess.feedback}</div>
+            </div>
+          )}
           <div className="en-line en-only"><div>{data.translation}</div>{data.literal && <div className="lit">Word for word: {data.literal}</div>}</div>
           {data.parts.length > 0 && (
             <div className="tablewrap"><table className="parts"><tbody>
@@ -29,72 +56,73 @@ function Sentence({ sentence, ai, showAllEnglish, selected, onPick, onExplain, o
               ))}
             </tbody></table></div>
           )}
-          {data.grammar.length > 0 && (
-            <div style={{ display: 'grid', gap: 8 }}>
-              <div className="label">Grammar in this sentence</div>
-              {data.grammar.map((g, i) => (
-                <div className="gnote" key={i}>
-                  <div className="chips">
-                    {g.entry ? <GrammarChip entry={g.entry} onOpen={onOpenGrammar} /> : <span className="chip" lang="ja">{g.pattern}</span>}
-                    {g.where && <span className="muted" lang="ja">{g.where}</span>}
-                  </div>
-                  <div>{g.note}</div>
-                </div>
-              ))}
+          {data.grammar.map((g, i) => (
+            <div className="gnote" key={i}>
+              <div className="chips">
+                {g.entry ? <GrammarChip entry={g.entry} onOpen={onOpenGrammar} /> : <span className="chip" lang="ja">{g.pattern}</span>}
+                {g.where && <span className="muted" lang="ja">{g.where}</span>}
+              </div>
+              <div>{g.note}</div>
             </div>
-          )}
+          ))}
           {data.notes && <div className="muted">{data.notes}</div>}
         </>
-      ) : (
-        <>
-          <div className="en-only muted">{ai?.status === 'loading' ? 'English is on its way…' : 'English appears once this sentence has been explained.'}</div>
-          {sentence.detected.length > 0 && (
-            <div className="chips"><span className="muted tiny">Patterns spotted</span>
-              {sentence.detected.map(g => <GrammarChip key={g.id} entry={g} maybe onOpen={onOpenGrammar} />)}</div>
-          )}
-        </>
+      ) : sentence.detected.length > 0 && (
+        <div className="chips"><span className="muted tiny">Patterns spotted</span>
+          {sentence.detected.map(g => <GrammarChip key={g.id} entry={g} maybe onOpen={onOpenGrammar} />)}</div>
       )}
 
-      <div className="row">
-        {!ai && <button className="btn" onClick={onExplain}>Explain this sentence</button>}
-        {ai?.status === 'loading' && <Busy label="Explaining…" onStop={onStop} />}
-        {ai?.status === 'error' && <><span className="muted">{ai.message}</span><button className="link" onClick={onExplain}>Try again</button></>}
-        <span className="grow" />
-        {!showAllEnglish && <button className="link" onClick={toggleEnglish}>{showEnglish ? 'Hide English' : 'Show English'}</button>}
-      </div>
+      {englishMode !== 'guess' && (!ai || englishMode === 'hidden') && (
+        <div className="row">
+          {!ai && <button className="btn" onClick={() => onExplain()}>Explain</button>}
+          <span className="grow" />
+          {englishMode === 'hidden' && <button className="link" onClick={toggleEnglish}>{showEnglish ? 'Hide English' : 'Show English'}</button>}
+        </div>
+      )}
     </div>
   );
 }
 
 export default function ReadView({ onLookup, onOpenGrammar, aiEnabled }) {
-  const [text, setText] = useState(() => store.get('read', null) ?? EXAMPLE);
-  const [sentences, setSentences] = useState(null);
+  const [text, setText] = useState(() => store.get('read', ''));
+  // One box, two states: 'edit' is where you paste; 'read' is the sentence-by-sentence breakdown.
+  const [mode, setMode] = useState('edit');
+  const [sentences, setSentences] = useState([]);
   const [ai, setAi] = useState({});                  // sentence text -> { status, data | message }
-  const [showEnglish, setShowEnglish] = useState(false);
+  const [englishMode, setEnglishMode] = useState(() => store.get('english', 'guess'));
   const [selected, setSelected] = useState(null);    // "sentenceIndex:itemIndex"
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const controllers = useRef({});
   const input = useRef(null);
 
   useEffect(() => { store.set('read', text); }, [text]);
+  useEffect(() => { store.set('english', englishMode); }, [englishMode]);
+  useLayoutEffect(() => {
+    const el = input.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = el.scrollHeight + 2 + 'px';
+  }, [text, mode]);
 
-  async function breakDown(source = text) {
-    setError(''); setSelected(null);
-    if (!source.trim()) { setSentences([]); return; }
+  async function breakDown() {
+    if (!text.trim()) { input.current?.focus(); return; }
+    setError(''); setBusy(true); setSelected(null);
     try {
-      setSentences((await api.post('/api/read', { text: source })).sentences);
+      setSentences((await api.post('/api/read', { text })).sentences);
+      setMode('read');
     } catch (e) { setError(e.message); }
+    setBusy(false);
   }
-  useEffect(() => { breakDown(); }, []);              // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function explain(sentence) {
+  async function explain(sentence, guess = '') {
     const key = sentence.text;
     if (ai[key]?.status === 'loading' || ai[key]?.status === 'done') return ai[key];
     const c = (controllers.current[key] = new AbortController());
     setAi(a => ({ ...a, [key]: { status: 'loading' } }));
     let result;
     try {
-      const data = await api.post('/api/ai/explain', { sentence: key, context: sentences.map(s => s.text).join('') }, c.signal);
+      const data = await api.post('/api/ai/explain', { sentence: key, context: sentences.map(s => s.text).join(''), guess }, c.signal);
       result = { status: 'done', data };
     } catch (e) {
       result = e.code === 'cancelled' ? undefined : { status: 'error', message: e.message };
@@ -103,48 +131,55 @@ export default function ReadView({ onLookup, onOpenGrammar, aiEnabled }) {
     return result;
   }
   async function explainAll() {
-    const todo = (sentences || []).filter(s => !ai[s.text] || ai[s.text].status === 'error');
+    const todo = sentences.filter(s => !ai[s.text] || ai[s.text].status === 'error');
     let next = 0, failed = false;
     const worker = async () => {
       while (next < todo.length && !failed) {
         const r = await explain(todo[next++]);
-        if (r?.status === 'error') failed = true;     // stop the queue; each card offers its own retry
+        if (r?.status === 'error') failed = true;     // stop the queue; each sentence offers its own retry
       }
     };
     await Promise.all([worker(), worker()]);
   }
-  const clear = () => { setText(''); setSentences([]); input.current?.focus(); };
+
+  if (mode === 'edit') {
+    return (
+      <section className="view" aria-label="Read">
+        <textarea className="sheet" ref={input} lang="ja" placeholder="日本語の文をここに貼り付けてください。" aria-label="Japanese text to read"
+          autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={text} onChange={e => setText(e.target.value)}
+          onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); breakDown(); } }} />
+        <div className="row">
+          {error && <span className="muted">{error}</span>}<span className="grow" />
+          {busy && <Busy label="Breaking it down…" />}
+          <button className="btn primary" onClick={breakDown} disabled={!text.trim() || busy} title="Ctrl/⌘ + Enter">Break it down</button>
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section className="view" aria-label="Read">
-      <div className="view-head"><h1><span lang="ja">読む</span><small>Read</small></h1><p>Paste Japanese from anywhere. Tap any word; open the grammar it uses.</p></div>
-      {text === EXAMPLE && (
-        <div className="example-note"><span>Example text. Paste your own sentence, article or lyric over it.</span>
-          <button className="link" onClick={clear}>Clear it</button></div>
-      )}
-      <textarea className="sheet" ref={input} lang="ja" placeholder="日本語の文をここに貼り付けてください。" aria-label="Japanese text to analyze"
-        autoComplete="off" autoCorrect="off" autoCapitalize="off" spellCheck={false} value={text} onChange={e => setText(e.target.value)} />
-      <div className="row">
-        <label className="switch"><input type="checkbox" checked={showEnglish} onChange={e => setShowEnglish(e.target.checked)} /><span>Show English</span></label>
+      <div className="readbar">
+        <button className="btn" onClick={() => setMode('edit')}>← Edit text</button>
         <span className="grow" />
-        <button className="btn" onClick={explainAll} disabled={!sentences?.length}>Explain every sentence</button>
-        <button className="btn primary" onClick={() => breakDown()}>Break it down</button>
+        {englishMode !== 'guess' && <button className="btn" onClick={explainAll}>Explain every sentence</button>}
+        <div className="seg" role="group" aria-label="English">
+          <span className="muted tiny">English</span>
+          {ENGLISH_MODES.map(([id, label]) => <button key={id} aria-pressed={englishMode === id} onClick={() => setEnglishMode(id)}>{label}</button>)}
+        </div>
       </div>
-      {!aiEnabled && <div className="muted tiny">Explanations and English need an Anthropic API key on the server (see the README). The word-by-word breakdown works without one.</div>}
       <div className="legend" aria-label="Underline colors">
         {[['n', 'noun'], ['v', 'verb'], ['adj', 'adjective'], ['adv', 'adverb'], ['p', 'particle'], ['aux', 'copula / auxiliary']].map(([c, name]) =>
           <span key={c}><i style={{ background: `var(--pos-${c})` }} />{name}</span>)}
       </div>
+      {!aiEnabled && <div className="muted tiny">Explanations and English need an Anthropic API key on the server (see the README). The word-by-word breakdown works without one.</div>}
 
-      <div id="readOut" className={'view pos' + (showEnglish ? ' show-en' : '')}>
-        {error && <div className="muted">{error}</div>}
-        {sentences === null && !error && <Busy label="Breaking it down…" />}
-        {sentences?.length === 0 && <div className="muted">Paste some Japanese above, then break it down.</div>}
-        {sentences?.map((s, si) => (
-          <Sentence key={si + s.text} sentence={s} ai={ai[s.text]} showAllEnglish={showEnglish}
+      <div className="pos">
+        {sentences.map((s, si) => (
+          <Sentence key={si + s.text} sentence={s} ai={ai[s.text]} englishMode={englishMode}
             selected={selected?.startsWith(si + ':') ? Number(selected.split(':')[1]) : null}
             onPick={(item, i) => { setSelected(si + ':' + i); onLookup(item); }}
-            onExplain={() => explain(s)} onStop={() => controllers.current[s.text]?.abort()} onOpenGrammar={onOpenGrammar} />
+            onExplain={guess => explain(s, guess)} onStop={() => controllers.current[s.text]?.abort()} onOpenGrammar={onOpenGrammar} />
         ))}
       </div>
     </section>
